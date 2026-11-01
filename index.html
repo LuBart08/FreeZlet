@@ -15,8 +15,12 @@
   var isMobileFile  = currentFile === 'flashlearn-mobile.html';
 
 if (isMobile && isDesktopFile) {
-window.location.replace(basePath + 'flashlearn-mobile.html');
-return;
+  try {
+    fetch(basePath + 'flashlearn-mobile.html', {method:'HEAD'}).then(function(r){
+      if (r.ok) window.location.replace(basePath + 'flashlearn-mobile.html');
+    }).catch(function(){});
+  } catch(e) {}
+  return;
 }
 if (!isMobile && isMobileFile) {
 window.location.replace(basePath + 'index.html');
@@ -561,7 +565,7 @@ nav{padding:0 14px;}
 }
 /* iPadOS / WebKit : réactivité des taps */
 button, .btn, .nav-btn, .tag, .ctrl-btn, .option-btn, .back-btn, .hcb-btn, .logo,
-.flashcard-wrap, .folder-header, .modal-folder-item, .modal-none-item, .drop-zone, .home-continue-banner {
+.flashcard-wrap, .folder-header, .modal-folder-item, .modal-none-item, .import-zone, .home-continue-banner {
   touch-action: manipulation; -webkit-tap-highlight-color: transparent;
 }
 button { -webkit-appearance: none; appearance: none; }
@@ -600,6 +604,20 @@ button { -webkit-appearance: none; appearance: none; }
 .tag-share:hover { background:rgba(99,179,237,.25); }
 .import-zone:hover { border-color:var(--accent); color:var(--accent); background:rgba(108,99,255,.05); }
 }
+/* BARRE CARACTÈRES SPÉCIAUX */
+.char-bar { position:sticky; top:80px; z-index:90; display:flex; align-items:center; gap:6px; margin:14px 0; padding:8px;
+  background:#13132a; border:1px solid var(--border); border-radius:14px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.char-bar button { flex:0 0 auto; min-width:42px; height:42px; padding:0 10px; border-radius:10px; border:1px solid var(--border);
+  background:var(--surface2); color:#e8e8f0 !important; -webkit-text-fill-color:#e8e8f0 !important; font-family:'DM Sans',sans-serif;
+  font-size:1.05rem; cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent; -webkit-user-select:none; user-select:none; }
+.char-bar button.char-tab { font-size:.78rem; color:var(--muted) !important; -webkit-text-fill-color:var(--muted) !important; }
+.char-bar button.char-tab.on, .char-bar button.char-shift.on { border-color:#6c63ff; background:rgba(108,99,255,.25); color:#fff !important; -webkit-text-fill-color:#fff !important; }
+.char-sep { flex:0 0 1px; align-self:stretch; background:var(--border); margin:0 4px; }
+.char-bar-inline { position:static; margin:0 0 12px; }
+.card-input, .ghost-text { font-size:16px; }
+.save-ind.error { color:#ff9bb0 !important; -webkit-text-fill-color:#ff9bb0 !important; }
+.backup-reminder { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 0 16px; padding:12px 16px; border-radius:14px; border:1px solid rgba(251,191,36,.35); background:rgba(251,191,36,.08); color:#fbbf24; -webkit-text-fill-color:#fbbf24; font-size:.88rem; }
+.backup-reminder span { flex:1; min-width:180px; }
 </style>
 
 </head>
@@ -653,7 +671,7 @@ button { -webkit-appearance: none; appearance: none; }
     <a href="flashlearn-mobile.html" title="Version mobile" style="font-size:.8rem;color:var(--muted);text-decoration:none;padding:6px 8px;border-radius:8px;transition:background .2s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''" >📱</a>
   </div>
 </nav>
-<input type="file" id="import-file" accept=".json,.csv" style="display:none" onchange="handleImportFile(event)">
+<input type="file" id="import-file" accept=".json,.csv,.tsv,.txt" style="display:none" onchange="handleImportFile(event)">
 
 <!-- MERGE BAR -->
 
@@ -695,6 +713,7 @@ button { -webkit-appearance: none; appearance: none; }
     </div>
     <input type="text" class="input-field" id="set-title" placeholder="Titre du set" style="margin-bottom:10px">
     <input type="text" class="input-field" id="set-desc" placeholder="Description (optionnel)">
+    <div class="char-bar" id="char-bar" aria-label="Caractères spéciaux"></div>
     <div class="cards-list" id="cards-list"></div>
     <button class="add-card-btn" onclick="addCard()">+ Ajouter une carte</button>
     <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap">
@@ -792,8 +811,9 @@ button { -webkit-appearance: none; appearance: none; }
       <div class="write-card">
         <div class="write-prompt-label">Quelle est la définition de :</div>
         <div class="write-prompt" id="write-prompt"></div>
+        <div class="char-bar char-bar-inline" id="char-bar-write" data-target="write-input"></div>
         <textarea class="write-answer-input" id="write-input" placeholder="Tape ta réponse… (Entrée pour valider)" rows="2"
-          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();}"></textarea>
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();}"></textarea>
         <div class="hint-box" id="hint-box">
           <span class="hint-label">💡 Indice</span>
           <span id="hint-text"></span>
@@ -837,7 +857,7 @@ button { -webkit-appearance: none; appearance: none; }
     <p id="folder-modal-desc">Choisis un dossier pour ce set, ou crée-en un nouveau.</p>
     <div class="modal-list" id="folder-modal-list"></div>
     <div class="modal-new-folder">
-      <input class="input-field" id="new-folder-name" placeholder="Nouveau dossier…" style="flex:1;font-size:.88rem;padding:9px 12px">
+      <input class="input-field" id="new-folder-name" placeholder="Nouveau dossier…" style="flex:1;font-size:16px;padding:9px 12px">
       <button class="btn btn-accent btn-sm" onclick="createFolderFromModal()">Créer</button>
     </div>
     <div class="modal-actions">
@@ -878,13 +898,22 @@ button { -webkit-appearance: none; appearance: none; }
 var bc = null;
 try { bc = new BroadcastChannel('flashlearn_sync'); } catch(e){}
 if (bc) bc.onmessage = function(e){
-  if (!e.data || e.data.type !== 'sets_updated') return;
-  sets = e.data.sets;
-  if (document.getElementById('page-home').classList.contains('active')) renderHome();
+  if (!e.data) return;
+  var homeActive = document.getElementById('page-home').classList.contains('active');
+  if (e.data.type === 'folders_updated') { reloadFoldersFromStorage(); if (homeActive) renderHome(); return; }
+  if (e.data.type !== 'sets_updated' || !Array.isArray(e.data.sets)) return;
+  sets = e.data.sets; reloadFoldersFromStorage();
+  if (homeActive) renderHome();
   setSaveInd('synced', '🔄 Synchronisé');
   showToast('🔄 Mis à jour depuis un autre onglet');
   setTimeout(function(){ updateSaveInd(); }, 3000);
 };
+window.addEventListener('storage', function(e){
+  if (e.key !== 'flashlearn_sets' && e.key !== 'flashlearn_folders') return;
+  try { sets = JSON.parse(localStorage.getItem('flashlearn_sets') || '[]'); } catch(err){}
+  reloadFoldersFromStorage();
+  if (document.getElementById('page-home').classList.contains('active')) renderHome();
+});
 
 // ═══════════════════════════════════════════
 //  DATA
@@ -893,13 +922,20 @@ var sets = (function(){ try { return JSON.parse(localStorage.getItem('flashlearn
 var editingId = null;
 
 function saveSets() {
-  try { localStorage.setItem('flashlearn_sets', JSON.stringify(sets)); } catch(e){}
+  var ok = true;
+  try { localStorage.setItem('flashlearn_sets', JSON.stringify(sets)); } catch(e){ ok = false; }
   if (bc) { try { bc.postMessage({ type:'sets_updated', sets:sets }); } catch(e){} }
+  if (!ok) {
+    setSaveInd('error', '⚠ Non sauvegardé');
+    showToast('⚠ Sauvegarde impossible (stockage plein ou navigation privée). Exporte tes sets avec ⬇.');
+    return false;
+  }
   setSaveInd('saving', 'Sauvegarde…');
   setTimeout(function(){
     setSaveInd('saved', sets.length + ' set' + (sets.length>1?'s':'') + ' sauvegardé' + (sets.length>1?'s':''));
     setTimeout(updateSaveInd, 2500);
   }, 400);
+  return true;
 }
 
 function setSaveInd(cls, label) {
@@ -921,6 +957,12 @@ function updateSaveInd() {
 //  NAVIGATION
 // ═══════════════════════════════════════════
 function showPage(id) {
+  var cur = document.querySelector('.page.active');
+  var onCreate = !!cur && cur.id === 'page-create';
+  if (onCreate && id === 'create') return; // déjà sur la création : ne pas écraser le brouillon
+  if (onCreate && id !== 'create' && createDirty() &&
+      !confirm('Quitter sans sauvegarder ? Les modifications seront perdues.')) return;
+  if (id !== 'create') { editingId = null; createSnap = null; }
   document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('active'); });
   document.getElementById('page-'+id).classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.remove('active'); });
@@ -962,6 +1004,8 @@ function renderHome() {
   html +=   '<div class="home-stat"><div class="home-stat-num">'+totalCards+'</div><div class="home-stat-lbl">Cartes</div></div>';
   html +=   '<div class="home-stat"><div class="home-stat-num">'+folders.length+'</div><div class="home-stat-lbl">Dossiers</div></div>';
   html += '</div>';
+
+  html += backupReminderHTML();
 
   // ── Actions + sets ──
   html += '<div class="section-row"><div class="section-title">Mes sets ('+sets.length+')</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="startMergeMode()">🔀 Fusionner</button><button class="btn btn-ghost btn-sm" onclick="exportAll()">⬇ Tout exporter</button></div></div>';
@@ -1054,11 +1098,11 @@ function doMerge() {
   var cards = [];
   mergeIds.forEach(function(id){
     var s = sets.find(function(s){ return s.id===id; });
-    if (s) cards = cards.concat(s.cards);
+    if (s) cards = cards.concat(s.cards.map(function(c){ return {term:c.term, def:c.def}; }));
   });
   // Deduplicate cards by term
   var seen = {};
-  cards = cards.filter(function(c){ var k = c.term.toLowerCase(); if (seen[k]) return false; seen[k]=true; return true; });
+  cards = cards.filter(function(c){ var k = 'k' + (c.term + '\u0001' + c.def).normalize('NFC').toLowerCase(); if (seen[k]) return false; seen[k]=true; return true; });
   var merged = { id: 'mg_'+Date.now(), title: name, desc: mergeIds.length + ' sets fusionnés', cards: cards, createdAt: new Date().toISOString() };
   sets.unshift(merged);
   saveSets();
@@ -1081,96 +1125,140 @@ function triggerImport() { document.getElementById('import-file').click(); }
 
 function handleImportFile(e) {
   var file = e.target.files[0]; if (!file) return;
-  var isCSV = file.name.endsWith('.csv');
-  var r = new FileReader();
-  r.onload = function(ev){ isCSV ? importCSV(ev.target.result, file.name) : importJSON(ev.target.result); };
-  r.readAsText(file); e.target.value = '';
+  importFile(file);
+  e.target.value = '';
 }
 
 function handleDrop(e) {
-  e.preventDefault();
+  e.preventDefault(); e.stopPropagation(); // évite le double import (gestionnaire global)
+  dragCounter = 0;
+  document.getElementById('drag-overlay').classList.remove('show');
   document.getElementById('drop-zone').classList.remove('drag-over');
-  var file = e.dataTransfer.files[0];
-  var isCSV = file.name.endsWith('.csv');
-  var isJSON = file.name.endsWith('.json');
-  if (!isCSV && !isJSON) { showToast('Fichier .json ou .csv requis'); return; }
+  importFile(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]);
+}
+
+// Lit un fichier texte en détectant l'encodage (UTF-8, UTF-16, sinon Windows-1252 : exports Excel)
+function readFileSmart(file, cb) {
   var r = new FileReader();
-  r.onload = function(ev){ isCSV ? importCSV(ev.target.result, file.name) : importJSON(ev.target.result); };
-  r.readAsText(file);
+  r.onerror = function(){ showToast('❌ Lecture du fichier impossible'); };
+  r.onload = function(ev) {
+    var buf = ev.target.result, b = new Uint8Array(buf), text;
+    try {
+      if (b[0] === 0xFF && b[1] === 0xFE) text = new TextDecoder('utf-16le').decode(buf);
+      else if (b[0] === 0xFE && b[1] === 0xFF) text = new TextDecoder('utf-16be').decode(buf);
+      else {
+        try { text = new TextDecoder('utf-8', {fatal:true}).decode(buf); }
+        catch(err) { text = new TextDecoder('windows-1252').decode(buf); }
+      }
+    } catch(err) { text = String.fromCharCode.apply(null, b); }
+    cb(text.replace(/^\uFEFF/, ''));
+  };
+  r.readAsArrayBuffer(file);
+}
+
+function importFile(file) {
+  if (!file) return;
+  var name = file.name || '';
+  var isJSON = /\.json$/i.test(name), isTable = /\.(csv|tsv|txt)$/i.test(name);
+  if (!isJSON && !isTable) { showToast('Fichier .json, .csv, .tsv ou .txt requis'); return; }
+  readFileSmart(file, function(text){ if (isJSON) importJSON(text); else importCSV(text, name); });
 }
 
 function importJSON(text) {
-  try {
-    var data = JSON.parse(text);
-    var items = Array.isArray(data) ? data : [data];
-    var imported = 0;
-    items.forEach(function(item){
-      if (!item.title || !Array.isArray(item.cards)) return;
-      if (sets.find(function(s){ return s.title===item.title && s.cards.length===item.cards.length; })) { showToast('"'+item.title+'" déjà présent'); return; }
-      sets.unshift({ id:'imp_'+Date.now()+'_'+Math.random().toString(36).slice(2,6), title:item.title, desc:item.desc||'', cards:item.cards.map(function(c){ return {term:String(c.term||''),def:String(c.def||'')}; }).filter(function(c){ return c.term||c.def; }), createdAt:item.createdAt||new Date().toISOString() });
-      imported++;
-    });
-    saveSets();
-    if (imported) { showToast('✅ '+imported+' set(s) importé(s) !'); renderHome(); }
-    else showToast('Aucun set valide trouvé');
-  } catch(err) { showToast('❌ Fichier JSON invalide'); }
+  var data;
+  try { data = JSON.parse(text); } catch(err) { showToast('❌ Fichier JSON invalide'); return; }
+  var items, impFolders = [], foldersChanged = false, folderMap = {};
+  if (data && !Array.isArray(data) && Array.isArray(data.sets)) {      // sauvegarde complète (v2)
+    items = data.sets; impFolders = Array.isArray(data.folders) ? data.folders : [];
+  } else { items = Array.isArray(data) ? data : [data]; }
+  impFolders.forEach(function(f){
+    if (!f || !f.name) return;
+    var local = folders.find(function(x){ return f.id && x.id === f.id; }) ||
+                folders.find(function(x){ return x.name === f.name; });
+    if (!local) {
+      local = { id: (f.id ? String(f.id) : 'fl_'+Date.now()+'_'+Math.random().toString(36).slice(2,6)), name:String(f.name), open:true };
+      folders.push(local); foldersChanged = true;
+    }
+    if (f.id) folderMap[f.id] = local.id;
+  });
+  var imported = 0, empty = 0, dup = 0;
+  items.forEach(function(item){
+    try {
+      if (!item || typeof item !== 'object' || item.title == null || !Array.isArray(item.cards)) return;
+      var title = String(item.title).normalize('NFC');
+      var cards = item.cards
+        .filter(function(c){ return c && typeof c === 'object'; })
+        .map(function(c){ return { term:String(c.term == null ? '' : c.term).normalize('NFC'), def:String(c.def == null ? '' : c.def).normalize('NFC') }; })
+        .filter(function(c){ return c.term || c.def; });
+      if (!cards.length) { empty++; return; }
+      if (sets.find(function(s){ return s.title === title && s.cards.length === cards.length; })) { dup++; return; }
+      var ns = { id:'imp_'+Date.now()+'_'+Math.random().toString(36).slice(2,6), title:title,
+                 desc: item.desc ? String(item.desc) : '', cards:cards,
+                 createdAt: (typeof item.createdAt === 'string' ? item.createdAt : new Date().toISOString()) };
+      if (item.folderId && folderMap[item.folderId]) ns.folderId = folderMap[item.folderId];
+      sets.unshift(ns); imported++;
+    } catch(err) {}
+  });
+  if (foldersChanged) saveFolders();
+  if (imported) { saveSets(); showToast('✅ '+imported+' set(s) importé(s) !'+(dup?' ('+dup+' déjà présent(s))':'')); renderHome(); }
+  else if (dup) showToast('Déjà présent : rien à importer');
+  else if (empty) showToast('Set(s) vide(s) ignoré(s)');
+  else showToast('Aucun set valide trouvé');
 }
+
+// Analyse CSV/TSV (guillemets, retours à la ligne dans un champ, séparateur au choix)
+function parseDelimited(text, delim) {
+  var rows = [], row = [], cur = '', inQ = false, n = text.length;
+  for (var i = 0; i < n; i++) {
+    var ch = text[i];
+    if (inQ) {
+      if (ch === '"') { if (text[i+1] === '"') { cur += '"'; i++; } else inQ = false; }
+      else cur += ch;
+    } else if (ch === '"' && cur.trim() === '') { inQ = true; cur = ''; }
+    else if (ch === delim) { row.push(cur); cur = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i+1] === '\n') i++;
+      row.push(cur); cur = ''; rows.push(row); row = [];
+    } else cur += ch;
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  return rows.filter(function(r){ return r.some(function(c){ return c.trim(); }); });
+}
+function detectDelim(text) {
+  var first = text.split(/\r?\n/).filter(function(l){ return l.trim(); })[0] || '';
+  var best = ',', bestCount = 0;
+  [',', ';', '\t'].forEach(function(d){
+    var inQ = false, c = 0;
+    for (var i = 0; i < first.length; i++) { var ch = first[i]; if (ch === '"') inQ = !inQ; else if (ch === d && !inQ) c++; }
+    if (c > bestCount) { bestCount = c; best = d; }
+  });
+  return best;
+}
+var HEADER_RE = /^(term|terme|mot|word|question|front|recto|vocab|vocabulaire|langue|language|source|cible|target|original|definition|définition|réponse|reponse|answer|back|verso|traduction|translation|allemand|français|francais|anglais|espagnol|italien|portugais|german|french|english|spanish|italian|portuguese|deutsch|español|italiano)\b/i;
 
 function importCSV(text, filename) {
   try {
-    var lines = text.split(/\r?\n/).filter(function(l){ return l.trim(); });
-    if (lines.length < 2) { showToast('CSV vide ou invalide'); return; }
-
-    // Détermine si la première ligne est un header (Term,Definition ou similaire)
-    var firstLine = lines[0].toLowerCase().replace(/['"]/g,'').trim();
-    var hasHeader = /^(term|mot|word|question)/.test(firstLine);
-    var dataLines = hasHeader ? lines.slice(1) : lines;
-
-    function parseCSVLine(line) {
-      // Gère les champs entre guillemets avec virgules internes
-      var result = [];
-      var current = '';
-      var inQuotes = false;
-      for (var i = 0; i < line.length; i++) {
-        var ch = line[i];
-        if (ch === '"') {
-          if (inQuotes && line[i+1] === '"') { current += '"'; i++; } // guillemet doublé
-          else { inQuotes = !inQuotes; }
-        } else if (ch === ',' && !inQuotes) {
-          result.push(current.trim()); current = '';
-        } else {
-          current += ch;
-        }
-      }
-      result.push(current.trim());
-      return result;
-    }
-
+    var rows = parseDelimited(text, detectDelim(text));
+    if (!rows.length) { showToast('Fichier vide ou invalide'); return; }
+    var h = rows[0];
+    var hasHeader = rows.length > 1 && (HEADER_RE.test((h[0] || '').trim()) || HEADER_RE.test((h[1] || '').trim()));
     var cards = [];
-    dataLines.forEach(function(line) {
-      if (!line.trim()) return;
-      var parts = parseCSVLine(line);
-      if (parts.length >= 2) {
-        var term = parts[0].replace(/^"|"$/g,'').trim();
-        var def  = parts[1].replace(/^"|"$/g,'').trim();
-        if (term && def) cards.push({ term: term, def: def });
-      }
+    rows.slice(hasHeader ? 1 : 0).forEach(function(r){
+      if (r.length < 2) return;
+      var term = r[0].trim().normalize('NFC'), def = r[1].trim().normalize('NFC');
+      if (term && def) cards.push({ term: term, def: def });
     });
-
-    if (cards.length < 2) { showToast('Aucune carte valide dans le CSV'); return; }
-
-    // Titre = nom du fichier sans extension
-    var title = (filename || 'Import CSV').replace(/\.csv$/i,'').replace(/[-_]/g,' ');
-    var newSet = {
+    if (!cards.length) { showToast('Aucune carte valide (2 colonnes : terme, définition)'); return; }
+    var title = (filename || 'Import CSV').replace(/\.(csv|tsv|txt)$/i,'').replace(/[-_]/g,' ');
+    sets.unshift({
       id: 'csv_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
-      title: title, desc: 'Importé depuis CSV',
+      title: title, desc: 'Importé depuis un fichier',
       cards: cards, createdAt: new Date().toISOString()
-    };
-    sets.unshift(newSet);
+    });
     saveSets();
-    showToast('✅ ' + cards.length + ' cartes importées !');
+    showToast('✅ ' + cards.length + ' cartes importées !' + (hasHeader ? ' (en-tête ignoré)' : ''));
     renderHome();
-  } catch(err) { showToast('❌ Erreur CSV : ' + err.message); }
+  } catch(err) { showToast('❌ Erreur d\'import : ' + err.message); }
 }
 
 function exportSet(id) {
@@ -1180,8 +1268,24 @@ function exportSet(id) {
 }
 function exportAll() {
   if (!sets.length) { showToast('Aucun set à exporter'); return; }
-  downloadJSON(sets.map(function(s){ return {title:s.title,desc:s.desc,cards:s.cards,createdAt:s.createdAt}; }), 'flashlearn_backup_'+ds()+'.json');
+  downloadJSON({
+    format: 'flashlearn-backup', version: 2, exportedAt: new Date().toISOString(),
+    folders: folders.map(function(f){ return { id:f.id, name:f.name }; }),
+    sets: sets.map(function(s){ return { id:s.id, title:s.title, desc:s.desc, cards:s.cards, createdAt:s.createdAt, updatedAt:s.updatedAt, folderId:s.folderId }; })
+  }, 'flashlearn_backup_'+ds()+'.json');
+  try { localStorage.setItem('flashlearn_lastbackup', String(Date.now())); } catch(e){}
   showToast('⬇ '+sets.length+' sets exportés !');
+  if (document.getElementById('page-home').classList.contains('active')) renderHome();
+}
+function backupReminderHTML() {
+  if (!sets.length) return '';
+  var last = 0;
+  try { last = parseInt(localStorage.getItem('flashlearn_lastbackup') || '0', 10) || 0; } catch(e){}
+  if (!last) { try { localStorage.setItem('flashlearn_lastbackup', String(Date.now())); } catch(e){} return ''; }
+  var days = Math.floor((Date.now() - last) / 86400000);
+  if (days < 7) return '';
+  return '<div class="backup-reminder"><span>💾 Dernière sauvegarde il y a '+days+' jours. Exporte tes sets pour ne rien perdre.</span>' +
+         '<button class="btn btn-ghost btn-sm" onclick="exportAll()">⬇ Sauvegarder</button></div>';
 }
 function exportCurrentDraft() {
   var title = document.getElementById('set-title').value.trim()||'brouillon';
@@ -1189,17 +1293,30 @@ function exportCurrentDraft() {
   showToast('⬇ Brouillon exporté !');
 }
 function downloadJSON(obj, name) {
+  var url = URL.createObjectURL(new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}));
   var a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}));
-  a.download = name; a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+  a.href = url; a.download = name; a.style.display = 'none';
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ if (a.parentNode) a.parentNode.removeChild(a); URL.revokeObjectURL(url); }, 10000);
 }
-function slug(s){ return s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40)||'set'; }
+var RE_SLUG; try { RE_SLUG = new RegExp('[^\\p{L}\\p{N}]+','gu'); } catch(e) { RE_SLUG = /[^a-z0-9]+/g; }
+function slug(s){
+  return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ß/g,'ss').toLowerCase()
+    .replace(RE_SLUG,'-').replace(/^-|-$/g,'').slice(0,40) || 'set';
+}
 function ds(){ return new Date().toISOString().slice(0,10); }
 
 // ═══════════════════════════════════════════
 //  CREATE / EDIT
 // ═══════════════════════════════════════════
 var cardRows = [];
+var createSnap = null;
+function createState(){ return JSON.stringify([document.getElementById('set-title').value, document.getElementById('set-desc').value, cardRows]); }
+function createDirty(){ return createSnap !== null && createState() !== createSnap; }
+window.addEventListener('beforeunload', function(e){
+  var p = document.getElementById('page-create');
+  if (p && p.classList.contains('active') && createDirty()) { e.preventDefault(); e.returnValue = ''; return ''; }
+});
 
 function initCreate() {
   document.getElementById('create-title').textContent = editingId ? 'Modifier le set' : 'Nouveau set';
@@ -1209,9 +1326,10 @@ function initCreate() {
     cardRows = [{term:'',def:''}];
   }
   renderCardRows();
+  createSnap = createState();
 }
 
-function cancelCreate() { editingId = null; showPage('home'); }
+function cancelCreate() { showPage('home'); }
 
 function renderCardRows() {
   document.getElementById('cards-list').innerHTML = cardRows.map(function(c,i){
@@ -1242,18 +1360,21 @@ function saveSet() {
   if (!title) { showToast('Donne un titre à ton set !'); return; }
   var cards = cardRows.filter(function(c){ return c.term.trim()||c.def.trim(); });
   if (cards.length < 2) { showToast('Ajoute au moins 2 cartes.'); return; }
-  if (editingId) {
-    var s = sets.find(function(s){ return s.id===editingId; });
+  var s = editingId ? sets.find(function(s){ return s.id===editingId; }) : null;
+  if (s) {
     s.title=title; s.desc=document.getElementById('set-desc').value.trim(); s.cards=cards; s.updatedAt=new Date().toISOString();
     editingId=null;
   } else {
     sets.unshift({id:Date.now().toString(),title:title,desc:document.getElementById('set-desc').value.trim(),cards:cards,createdAt:new Date().toISOString()});
   }
-  saveSets(); showToast('Set sauvegardé 🎉'); showPage('home');
+  var okSave = saveSets(); createSnap = null;
+  if (okSave) showToast('Set sauvegardé 🎉');
+  showPage('home');
 }
 
 function editSet(id) {
   var s = sets.find(function(s){ return s.id===id; });
+  if (!s) { showToast('Set introuvable'); return; }
   editingId=id; document.getElementById('set-title').value=s.title; document.getElementById('set-desc').value=s.desc||'';
   cardRows=s.cards.map(function(c){ return {term:c.term,def:c.def}; }); showPage('create');
 }
@@ -1268,24 +1389,24 @@ function deleteSet(id) {
 // ═══════════════════════════════════════════
 var LP = [
   {code:'ar',name:'Arabe',flag:'🇸🇦',re:/[\u0600-\u06FF]/},
-  {code:'zh',name:'Chinois',flag:'🇨🇳',re:/[\u4E00-\u9FFF]/},
   {code:'ja',name:'Japonais',flag:'🇯🇵',re:/[\u3040-\u30FF]/},
+  {code:'zh',name:'Chinois',flag:'🇨🇳',re:/[\u4E00-\u9FFF]/},
   {code:'ko',name:'Coréen',flag:'🇰🇷',re:/[\uAC00-\uD7AF]/},
   {code:'ru',name:'Russe',flag:'🇷🇺',re:/[\u0400-\u04FF]/},
   {code:'el',name:'Grec',flag:'🇬🇷',re:/[\u0370-\u03FF]/},
   {code:'he',name:'Hébreu',flag:'🇮🇱',re:/[\u0590-\u05FF]/},
   {code:'hi',name:'Hindi',flag:'🇮🇳',re:/[\u0900-\u097F]/},
-  {code:'fr',name:'Français',flag:'🇫🇷',diac:/[àâéèêëîïôùûüç]/i,tri:['es ','ent','le ','de ','les','ion','que','est','on ','ons','re ','une','en ','ant','ous','ter','tio','men','eur']},
-  {code:'es',name:'Espagnol',flag:'🇪🇸',diac:/[áéíóúüñ]/i,tri:['de ','la ','que','es ','ent','ion','los','ado','las','con','par','as ','ien','tra','el ','aci','nte','os ']},
-  {code:'de',name:'Allemand',flag:'🇩🇪',diac:/[äöüßÄÖÜ]/i,tri:['en ','der','die','und','ein','sch','ist','cht','er ','auf','ber','ung','mit','den','das']},
-  {code:'it',name:'Italien',flag:'🇮🇹',diac:/[àèéìíîòóùú]/i,tri:['di ','che','la ','il ','to ','one','ent','re ','le ','in ','del','per','con']},
-  {code:'pt',name:'Portugais',flag:'🇵🇹',diac:/[ãõâêôáéíóúàç]/i,tri:['de ','que','os ','da ','as ','do ','es ','em ','com','par']},
-  {code:'en',name:'Anglais',flag:'🇬🇧',diac:/[]/i,tri:['the','ing','ion','ent','and','ati','for','her','hat','ith','ter','ers','ons','is ','in ']},
+  {code:'fr',name:'Français',flag:'🇫🇷',diac:/[àâéèêëîïôùûüç]/gi,tri:['es ','ent','le ','de ','les','ion','que','est','on ','ons','re ','une','en ','ant','ous','ter','tio','men','eur']},
+  {code:'es',name:'Espagnol',flag:'🇪🇸',diac:/[áéíóúüñ]/gi,tri:['de ','la ','que','es ','ent','ion','los','ado','las','con','par','as ','ien','tra','el ','aci','nte','os ']},
+  {code:'de',name:'Allemand',flag:'🇩🇪',diac:/[äöüßÄÖÜ]/gi,tri:['en ','der','die','und','ein','sch','ist','cht','er ','auf','ber','ung','mit','den','das']},
+  {code:'it',name:'Italien',flag:'🇮🇹',diac:/[àèéìíîòóùú]/gi,tri:['di ','che','la ','il ','to ','one','ent','re ','le ','in ','del','per','con']},
+  {code:'pt',name:'Portugais',flag:'🇵🇹',diac:/[ãõâêôáéíóúàç]/gi,tri:['de ','que','os ','da ','as ','do ','es ','em ','com','par']},
+  {code:'en',name:'Anglais',flag:'🇬🇧',diac:/[]/gi,tri:['the','ing','ion','ent','and','ati','for','her','hat','ith','ter','ers','ons','is ','in ']},
 ];
 function getTri(str){ var s=' '+str.toLowerCase().replace(/[^a-zàâéèêëîïôùûüçáéíóúüñäöüß ]/g,'')+' ',t={}; for(var i=0;i<s.length-2;i++){var k=s.slice(i,i+3);if(k.trim())t[k]=(t[k]||0)+1;} return t; }
 function detectLang(text){
   if(!text||text.trim().length<3)return null;
-  var str=text.trim();
+  var str=text.trim().normalize('NFC');
   for(var i=0;i<LP.length;i++)if(LP[i].re&&LP[i].re.test(str))return LP[i];
   if(str.replace(/[^a-zA-ZÀ-ÿ]/g,'').length<3)return null;
   var tri=getTri(str),best=null,bsc=-1;
@@ -1338,18 +1459,48 @@ function onCI(i,f,inp){
 }
 function onCF(i,f){var inp=document.getElementById((f==='t'?'t':'d')+'-'+i);onCI(i,f,inp);}
 function clrGhost(i,f){setTimeout(function(){var g=document.getElementById('ghost-'+f+'-'+i),h=document.getElementById('hint-'+f+'-'+i);if(g)g.innerHTML='';if(h)h.classList.remove('visible');},150);}
+function focusCardField(i,f){
+  var el=document.getElementById(f+'-'+i); if(!el) return;
+  el.focus(); try{ var n=el.value.length; el.setSelectionRange(n,n); }catch(e){}
+}
+// Passe au champ suivant. Retourne false s'il n'y a rien où aller (dernière carte vide).
+function goNextField(i,f){
+  if(f==='t'){ focusCardField(i,'d'); return true; }
+  if(i+1<cardRows.length){ focusCardField(i+1,'t'); return true; }
+  var c=cardRows[i];
+  if(c.term.trim()||c.def.trim()){ addCard(); return true; }
+  return false;
+}
 function onCK(e,i,f){
-  if(e.key==='Tab'){var s=ghSt[i+'_'+f];if(s){e.preventDefault();var inp=document.getElementById((f==='t'?'t':'d')+'-'+i);inp.value=s;cardRows[i][f==='t'?'term':'def']=s;updateLangBadge(i);clrGhost(i,f);}}
+  if(e.isComposing||e.keyCode===229) return;
+  if(e.key==='Tab'&&!e.shiftKey){
+    var s=ghSt[i+'_'+f];
+    if(s){
+      var inp=document.getElementById(f+'-'+i);
+      inp.value=s; cardRows[i][f==='t'?'term':'def']=s; updateLangBadge(i); clrGhost(i,f);
+    }
+    if(goNextField(i,f)) e.preventDefault();
+    else if(s) e.preventDefault();
+  } else if(e.key==='Enter'){
+    e.preventDefault();
+    goNextField(i,f);
+  }
 }
 
 // ═══════════════════════════════════════════
 //  FLASHCARDS
 // ═══════════════════════════════════════════
-var cs,fCards=[],fIdx=0,fOk=0,fKo=0,fFlipped=false,fMarked=new Set();
+var cs,fCards=[],fIdx=0,fOk=0,fKo=0,fFlipped=false,fMarked=new Set(),fMarkVal={};
 
+function studySet(id){
+  var st=sets.find(function(x){return x.id===id;});
+  if(!st){showToast('Set introuvable');return null;}
+  if(!st.cards||!st.cards.length){showToast('Ce set est vide : ajoute des cartes (✏️)');return null;}
+  return st;
+}
 function startFlash(id){
-  cs=sets.find(function(s){return s.id===id;});
-  fCards=shuffle(cs.cards.slice()); fIdx=fOk=fKo=0; fFlipped=false; fMarked=new Set();
+  cs=studySet(id); if(!cs)return;
+  fCards=shuffle(cs.cards.slice()); fIdx=fOk=fKo=0; fFlipped=false; fMarked=new Set(); fMarkVal={};
   document.getElementById('flash-set-name').textContent=cs.title;
   document.getElementById('flash-results').style.display='none';
   document.querySelector('.flashcard-area').style.display='';
@@ -1370,11 +1521,14 @@ function flipCard(){ document.getElementById('flashcard-inner').classList.toggle
 function prevCard(){ if(fIdx>0){fIdx--;showCard();} }
 function nextCard(){ if(fIdx<fCards.length-1){fIdx++;showCard();}else if(fMarked.size===fCards.length)showFlashEnd(); }
 function markCard(ok){
-  if(!fMarked.has(fIdx)){fMarked.add(fIdx);if(ok)fOk++;else fKo++;}
+  if(fMarked.has(fIdx)){
+    var prev=fMarkVal[fIdx];
+    if(prev!==ok){ if(prev)fOk--;else fKo--; if(ok)fOk++;else fKo++; fMarkVal[fIdx]=ok; }
+  } else { fMarked.add(fIdx); fMarkVal[fIdx]=ok; if(ok)fOk++;else fKo++; }
   if(fIdx<fCards.length-1){fIdx++;showCard();}else showFlashEnd();
 }
 function showFlashEnd(){
-  var pct=Math.round(fOk/fCards.length*100);
+  var done=fOk+fKo,pct=Math.round(fOk/Math.max(1,done)*100);
   document.getElementById('flash-score').textContent=pct+'%';
   document.getElementById('flash-correct').textContent=fOk;
   document.getElementById('flash-wrong').textContent=fKo;
@@ -1382,6 +1536,7 @@ function showFlashEnd(){
   document.getElementById('flash-progress').style.width='100%';
   document.querySelector('.flashcard-controls').style.display='none';
   document.querySelector('.flashcard-area').style.display='none';
+  if(done<fCards.length) showToast((fCards.length-done)+' carte(s) non notée(s), ignorée(s) dans le score');
   if(pct>=80) launchConfetti();
 }
 function restartFlash(){ startFlash(cs.id); }
@@ -1391,8 +1546,9 @@ function restartFlash(){ startFlash(cs.id); }
 // ═══════════════════════════════════════════
 var tQs=[],tIdx=0,tOk=0,tKo=0;
 function startTest(id){
-  cs=sets.find(function(s){return s.id===id;});
-  if(cs.cards.length<4){showToast('4 cartes minimum pour le QCM');return;}
+  var st=studySet(id); if(!st)return; cs=st;
+  var defs={}; cs.cards.forEach(function(c){ defs[c.def]=1; });
+  if(cs.cards.length<4||Object.keys(defs).length<4){showToast('4 cartes avec des définitions différentes minimum pour le QCM');return;}
   tQs=buildQs(cs.cards); tIdx=tOk=tKo=0;
   document.getElementById('test-set-name').textContent=cs.title;
   document.getElementById('test-results').style.display='none';
@@ -1401,7 +1557,8 @@ function startTest(id){
 }
 function buildQs(cards){
   return shuffle(cards.slice()).map(function(card){
-    var wrong=shuffle(cards.filter(function(c){return c!==card;})).slice(0,3).map(function(c){return c.def;});
+    var seen=Object.create(null); seen[card.def]=1; var wrong=[];
+    shuffle(cards.slice()).forEach(function(c){ if(wrong.length<3&&!seen[c.def]){ seen[c.def]=1; wrong.push(c.def); } });
     return {q:card.term,a:card.def,opts:shuffle([card.def].concat(wrong))};
   });
 }
@@ -1411,15 +1568,24 @@ function showQ(){
   document.getElementById('test-question').textContent=q.q;
   document.getElementById('test-feedback').className='feedback';
   document.getElementById('test-next-btn').style.display='none';
-  document.getElementById('test-options').innerHTML=q.opts.map(function(opt){
-    return '<button class="option-btn" onclick="answerQ(this,\''+escAttr(opt)+'\',\''+escAttr(q.a)+'\')">'+escHtml(opt)+'</button>';
+  // le texte n'est jamais injecté dans un attribut : on passe seulement l'indice
+  document.getElementById('test-options').innerHTML=q.opts.map(function(opt,i){
+    return '<button type="button" class="option-btn" data-i="'+i+'" onclick="answerQ(this)">'+escHtml(opt)+'</button>';
   }).join('');
 }
-function answerQ(btn,chosen,answer){
-  document.querySelectorAll('.option-btn').forEach(function(b){b.disabled=true;});
+function answerQ(btn){
+  var q=tQs[tIdx], chosen=q.opts[parseInt(btn.getAttribute('data-i'),10)], answer=q.a;
+  var all=[].slice.call(document.querySelectorAll('#test-options .option-btn'));
+  if(btn.disabled)return;
+  all.forEach(function(b){b.disabled=true;});
   var fb=document.getElementById('test-feedback');
   if(chosen===answer){btn.classList.add('correct');tOk++;fb.textContent='✓ Bonne réponse !';fb.className='feedback show fb-good';}
-  else{btn.classList.add('wrong');tKo++;var cb=[].slice.call(document.querySelectorAll('.option-btn')).find(function(b){return b.textContent===answer;});if(cb)cb.classList.add('correct');fb.textContent='✗ Bonne réponse : '+answer;fb.className='feedback show fb-bad';}
+  else{
+    btn.classList.add('wrong');tKo++;
+    var cb=all.find(function(b){return q.opts[parseInt(b.getAttribute('data-i'),10)]===answer;});
+    if(cb)cb.classList.add('correct');
+    fb.textContent='✗ Bonne réponse : '+answer;fb.className='feedback show fb-bad';
+  }
   var nb=document.getElementById('test-next-btn');nb.style.display='';nb.textContent=tIdx===tQs.length-1?'Voir les résultats':'Suivant →';
 }
 function nextQ(){ tIdx++; if(tIdx>=tQs.length)showTestEnd(); else showQ(); }
@@ -1440,7 +1606,7 @@ function restartTest(){ startTest(cs.id); }
 // ═══════════════════════════════════════════
 var wCards=[],wIdx=0,wOk=0,wAlmost=0,wKo=0,wStreak=[],wMissed=[],wAnswered=false;
 function startWrite(id){
-  cs=sets.find(function(s){return s.id===id;});
+  cs=studySet(id); if(!cs)return;
   wCards=shuffle(cs.cards.slice()); wIdx=wOk=wAlmost=wKo=0; wStreak=[]; wMissed=[]; wAnswered=false; wHintUsed=false;
   document.getElementById('write-set-name').textContent=cs.title;
   document.getElementById('write-results').style.display='none';
@@ -1451,7 +1617,7 @@ function showWQ(){
   if(wIdx>=wCards.length){showWriteEnd();return;}
   var c=wCards[wIdx];
   document.getElementById('write-progress').style.width=(wIdx/wCards.length*100)+'%';
-  document.getElementById('write-prompt').textContent=c.term;
+  document.getElementById('write-prompt').textContent=String(c.term).normalize('NFC');
   var inp=document.getElementById('write-input');
   inp.value=''; inp.className='write-answer-input'; inp.disabled=false;
   document.getElementById('write-feedback').className='write-feedback';
@@ -1471,7 +1637,7 @@ function checkWrite(){
   if(wAnswered)return;
   var inp=document.getElementById('write-input'),ua=inp.value.trim();
   if(!ua){showToast('Tape une réponse !');return;}
-  var exp=wCards[wIdx].def,res=scoreAnswer(ua,exp);
+  var exp=String(wCards[wIdx].def).normalize('NFC'),res=scoreAnswer(ua,exp);
   wAnswered=true; inp.disabled=true;
   var fb=document.getElementById('write-feedback');
   document.getElementById('write-submit-btn').style.display='none';
@@ -1489,7 +1655,7 @@ function showHint(){
   wHintUsed=true;
   var ans=wCards[wIdx].def;
   // Build hint: first letter + blanks for each remaining char, spaces preserved
-  var hint=ans.split('').map(function(ch,i){
+  var hint=Array.from(String(ans).normalize('NFC')).map(function(ch,i){
     if(ch===' ')return ' ';
     if(i===0)return ch;
     return '_';
@@ -1518,16 +1684,25 @@ function overrideCorrect(){
   document.getElementById('write-override-btn').classList.remove('show');
   renderStreak();
 }
+var RE_PUNCT; try { RE_PUNCT=new RegExp('[^\\p{L}\\p{N} ]','gu'); } catch(e) { RE_PUNCT=/[^a-z0-9 ]/g; }
+function normLoose(s){
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/ß/g,'ss').replace(/æ/g,'ae').replace(/œ/g,'oe').replace(/ø/g,'o').replace(/ł/g,'l')
+    .replace(/[đð]/g,'d').replace(/þ/g,'th').replace(/ı/g,'i')
+    .replace(RE_PUNCT,'').replace(/\s+/g,' ').trim();
+}
 function scoreAnswer(user,expected){
-  var u=user.toLowerCase().trim(),e=expected.toLowerCase().trim();
+  var u=user.normalize('NFC').toLowerCase().trim(),e=expected.normalize('NFC').toLowerCase().trim();
   if(u===e)return'correct';
   var ns=function(s){return s.replace(/\s+/g,' ').trim();};
   if(ns(u)===ns(e))return'correct';
   var no=function(s){return s.replace(/\s/g,'');};
   if(no(u)===no(e))return'correct';
-  var nr=function(s){return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim();};
-  if(nr(u)===nr(e)||no(nr(u))===no(nr(e)))return'correct';
-  var d=lev(u,e),m=Math.max(u.length,e.length);
+  var nu=normLoose(u),ne=normLoose(e);
+  if(nu&&ne&&(nu===ne||no(nu)===no(ne)))return'correct';
+  var m=Math.max(u.length,e.length);
+  if(m<5||/\d/.test(e))return'wrong'; // réponses courtes ou chiffrées : pas de « presque »
+  var d=lev(u,e);
   if(d<=Math.max(1,Math.floor(m*0.2)))return'almost';
   if(e.includes(u)&&u.length>=e.length*0.6)return'almost';
   return'wrong';
@@ -1539,7 +1714,7 @@ function lev(a,b){
   return dp[m][n];
 }
 function skipWrite(){wKo++;wMissed.push(wCards[wIdx]);wStreak.push('ko');wIdx++;showWQ();}
-function nextWrite(){wIdx++;showWQ();}
+function nextWrite(){ if(wIdx>=wCards.length)return; wIdx++; showWQ(); }
 function renderStreak(){ document.getElementById('write-streak').innerHTML=wStreak.map(function(s){return'<div class="streak-dot '+s+'"></div>';}).join(''); }
 function showWriteEnd(){
   var t=wCards.length,pct=Math.round(wOk/t*100);
@@ -1627,14 +1802,17 @@ var toastT;
 function showToast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(function(){t.classList.remove('show');},2800);}
 
 document.addEventListener('keydown',function(e){
-  if(document.getElementById('page-flash').classList.contains('active')){
+  if(e.isComposing||e.keyCode===229) return;   // saisie IME en cours (japonais, chinois…)
+  var t=e.target, tag=t&&t.tagName, inField=(tag==='INPUT'||tag==='TEXTAREA');
+  if(document.getElementById('page-flash').classList.contains('active')&&!inField){
+    if(e.key===' '&&tag==='BUTTON') return;
     if(e.key===' '||e.key==='ArrowUp'){e.preventDefault();flipCard();}
     if(e.key==='ArrowLeft')prevCard();
     if(e.key==='ArrowRight')nextCard();
   }
-  // Write mode: Enter = Vérifier si pas encore répondu, Suivant si déjà répondu
+  // Écrit : Entrée = Vérifier / Suivant (pas sur un bouton, pas sur l'écran des résultats)
   if(document.getElementById('page-write').classList.contains('active')){
-    if(e.key==='Enter'&&!e.shiftKey){
+    if(e.key==='Enter'&&!e.shiftKey&&tag!=='BUTTON'&&tag!=='A'&&document.getElementById('write-content').style.display!=='none'){
       e.preventDefault();
       if(!wAnswered){ checkWrite(); }
       else{ nextWrite(); }
@@ -1647,7 +1825,15 @@ document.addEventListener('keydown',function(e){
 // ═══════════════════════════════════════════
 var folders = (function(){ try { return JSON.parse(localStorage.getItem('flashlearn_folders') || '[]'); } catch(e){ return []; } })();
 
-function saveFolders() { try { localStorage.setItem('flashlearn_folders', JSON.stringify(folders)); } catch(e){} }
+function saveFolders() {
+  try { localStorage.setItem('flashlearn_folders', JSON.stringify(folders)); }
+  catch(e){ showToast('⚠ Dossiers non sauvegardés (stockage indisponible)'); return false; }
+  if (bc) { try { bc.postMessage({ type:'folders_updated' }); } catch(e){} }
+  return true;
+}
+function reloadFoldersFromStorage() {
+  try { folders = JSON.parse(localStorage.getItem('flashlearn_folders') || '[]'); } catch(e){}
+}
 
 function toggleFolder(id) {
   var f = folders.find(function(f){ return f.id===id; });
@@ -1675,7 +1861,8 @@ var folderModalSetId = null;
 function openFolderModal(setId) {
   folderModalSetId = setId;
   var s = sets.find(function(s){ return s.id===setId; });
-  document.getElementById('folder-modal-title').textContent = 'Dossier pour "'+escHtml(s.title)+'"';
+  if (!s) return;
+  document.getElementById('folder-modal-title').textContent = 'Dossier pour "'+s.title+'"';
   document.getElementById('new-folder-name').value = '';
   renderFolderModalList();
   document.getElementById('folder-modal').classList.add('open');
@@ -1746,14 +1933,7 @@ document.addEventListener('drop', function(e) {
   dragCounter = 0;
   document.getElementById('drag-overlay').classList.remove('show');
   document.getElementById('drop-zone').classList.remove('drag-over');
-  var file = e.dataTransfer.files[0];
-  if (!file) return;
-  var isCSV  = file.name.endsWith('.csv');
-  var isJSON = file.name.endsWith('.json');
-  if (!isCSV && !isJSON) { showToast('Fichier .json ou .csv requis'); return; }
-  var r = new FileReader();
-  r.onload = function(ev){ isCSV ? importCSV(ev.target.result, file.name) : importJSON(ev.target.result); };
-  r.readAsText(file);
+  importFile(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]);
 });
 
 // ═══════════════════════════════════════════
@@ -1769,8 +1949,10 @@ function openShareModal(id) {
   var url = buildShareUrl(s);
   document.getElementById('share-url-text').textContent = url;
   var kb = Math.round(url.length / 1024 * 10) / 10;
-  document.getElementById('share-size-info').textContent =
-    s.cards.length + ' cartes · lien de ' + kb + ' ko';
+  var info = s.cards.length + ' cartes · lien de ' + kb + ' ko';
+  if (url.length > 2000) info += ' — ⚠ lien long : certaines messageries le coupent, préfère ⬇ Exporter';
+  if (window.location.protocol === 'file:') info += ' — ⚠ page locale : le lien ne fonctionnera que sur cet appareil';
+  document.getElementById('share-size-info').textContent = info;
   document.getElementById('share-modal').classList.add('open');
 }
 
@@ -1779,12 +1961,22 @@ function closeShareModal() {
   shareSetId = null;
 }
 
+function b64uEncode(str) {
+  var bytes = new TextEncoder().encode(str), bin = '';
+  for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function b64uDecode(str) {
+  // accepte aussi les anciens liens (base64 classique, où « + » est arrivé en espace)
+  var t = String(str).replace(/ /g,'+').replace(/-/g,'+').replace(/_/g,'/');
+  while (t.length % 4) t += '=';
+  var bin = atob(t), bytes = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
 function buildShareUrl(s) {
-  var obj = { title: s.title, desc: s.desc, cards: s.cards, createdAt: s.createdAt };
-  var json = JSON.stringify(obj);
-  var b64;
-  try { b64 = btoa(unescape(encodeURIComponent(json))); } catch(e) { b64 = btoa(json); }
-  return window.location.href.split('?')[0].split('#')[0] + '?set=' + b64;
+  var obj = { title: s.title, desc: s.desc, cards: s.cards.map(function(c){ return {term:c.term, def:c.def}; }) };
+  return window.location.href.split('?')[0].split('#')[0] + '?set=' + b64uEncode(JSON.stringify(obj));
 }
 
 function copyShareUrl() {
@@ -1815,26 +2007,98 @@ document.getElementById('share-modal').addEventListener('click', function(e) {
 
 // ── Import depuis URL (?set=...) ──
 (function checkUrlShare() {
+  var b64 = new URLSearchParams(window.location.search).get('set');
+  if (!b64) return;
   try {
-    var params = new URLSearchParams(window.location.search);
-    var b64 = params.get('set');
-    if (!b64) return;
-    var json = decodeURIComponent(escape(atob(b64)));
-    var data = JSON.parse(json);
-    if (!data.title || !Array.isArray(data.cards)) return;
-    // Propose l'import
+    var data = JSON.parse(b64uDecode(b64));
+    if (!data || !data.title || !Array.isArray(data.cards)) throw new Error('format');
     setTimeout(function() {
       if (confirm('📦 Set partagé détecté : "' + data.title + '" (' + data.cards.length + ' cartes)\nL\'importer dans FlashLearn ?')) {
         importJSON(JSON.stringify(data));
       }
-      // Nettoie l'URL
       window.history.replaceState({}, '', window.location.pathname);
     }, 600);
-  } catch(e) {}
+  } catch(e) { setTimeout(function(){ showToast('⚠ Lien de partage invalide ou tronqué'); }, 600); }
 })();
 
 renderHome();
 updateSaveInd();
+(function checkStorage() {
+  try { localStorage.setItem('__fl_test','1'); localStorage.removeItem('__fl_test'); }
+  catch(e) { setTimeout(function(){ showToast('⚠ Stockage désactivé (navigation privée ?) : tes sets ne seront pas conservés. Exporte-les avec ⬇.'); }, 800); }
+  try { if (navigator.storage && navigator.storage.persist) { var p = navigator.storage.persist(); if (p && p.catch) p.catch(function(){}); } } catch(e){}
+})();
+
+// ═══════════════════════════════════════════
+//  CARACTÈRES SPÉCIAUX
+// ═══════════════════════════════════════════
+var CHARSETS = {
+  de:{label:'DE', chars:'ß ä ö ü'},
+  fr:{label:'FR', chars:'é è ê ë à â ç î ï ô œ ù û ÿ'},
+  es:{label:'ES', chars:'á é í ó ú ñ ü ¿ ¡'},
+  it:{label:'IT', chars:'à è é ì ò ù'},
+  pt:{label:'PT', chars:'ã õ á â à é ê í ó ô ú ç'},
+  ot:{label:'+', chars:'å ø æ ð þ ł ş ğ ı č š ž € £ ° ² ½'}
+};
+var charLang = 'de', charUpper = false, lastField = null;
+try { charLang = localStorage.getItem('flashlearn_charlang') || 'de'; if(!CHARSETS[charLang]) charLang='de'; } catch(e){}
+
+function charCase(ch) {
+  if (!charUpper) return ch;
+  return ch === 'ß' ? 'ẞ' : ch.toUpperCase();
+}
+function renderCharBar() {
+  var h = '<button type="button" class="char-shift'+(charUpper?' on':'')+'" data-act="shift" title="Majuscules">⇧</button><span class="char-sep"></span>';
+  Object.keys(CHARSETS).forEach(function(k){
+    h += '<button type="button" class="char-tab'+(k===charLang?' on':'')+'" data-act="lang" data-lang="'+k+'">'+CHARSETS[k].label+'</button>';
+  });
+  h += '<span class="char-sep"></span>';
+  CHARSETS[charLang].chars.split(' ').forEach(function(c){
+    var v = charCase(c);
+    h += '<button type="button" data-act="ins" data-ch="'+v+'">'+v+'</button>';
+  });
+  document.querySelectorAll('.char-bar').forEach(function(bar){ bar.innerHTML = h; });
+}
+function insertChar(ch, target) {
+  var el = target;
+  if (!el) {
+    el = lastField;
+    if (!el || !document.body.contains(el)) {
+      el = document.getElementById('t-'+(cardRows.length-1)) || document.getElementById('set-title');
+    }
+  }
+  if (!el || el.disabled) return;
+  el.focus();
+  var st = el.selectionStart, en = el.selectionEnd;
+  if (st == null) { st = en = el.value.length; }
+  el.value = el.value.slice(0, st) + ch + el.value.slice(en);
+  try { el.setSelectionRange(st+ch.length, st+ch.length); } catch(e){}
+  el.dispatchEvent(new Event('input', {bubbles:true}));
+}
+document.addEventListener('focusin', function(e){
+  var t = e.target;
+  if (t && t.matches && t.matches('.card-input, #set-title, #set-desc')) lastField = t;
+});
+(function(){
+  document.querySelectorAll('.char-bar').forEach(function(bar){
+    // empêche le bouton de voler le focus (garde le clavier ouvert sur iPad)
+    bar.addEventListener('mousedown', function(e){ e.preventDefault(); });
+    bar.addEventListener('click', function(e){
+      var b = e.target.closest ? e.target.closest('button') : null; if (!b) return;
+      var act = b.getAttribute('data-act');
+      if (act === 'ins') {
+        var tid = bar.getAttribute('data-target');
+        insertChar(b.getAttribute('data-ch'), tid ? document.getElementById(tid) : null);
+      }
+      else if (act === 'shift') { charUpper = !charUpper; renderCharBar(); }
+      else if (act === 'lang') {
+        charLang = b.getAttribute('data-lang'); renderCharBar();
+        try { localStorage.setItem('flashlearn_charlang', charLang); } catch(err){}
+      }
+    });
+  });
+  renderCharBar();
+})();
 </script>
 
 </body>
